@@ -1,8 +1,3 @@
-Claro que sí. Aquí tienes el archivo `README.md` formal y técnico, documentando la versión del proyecto que consolida la extracción de Ubidots y genera los reportes en Excel agrupados por variable.
-
-Este documento está diseñado para que cualquier desarrollador o analista pueda desplegar y entender la solución.
-
----
 
 # VETO ETL Process: Ubidots a Excel
 
