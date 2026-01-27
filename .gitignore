@@ -12,11 +12,11 @@ dist/
 
 Directorios de datos (LOCALES)
 
-Resultados_Por_Variable/
+Reportes_VETO/
 
 
 config_devices.json
-
+config.json
 
 Archivos de logs y temporales
 

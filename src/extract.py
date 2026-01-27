@@ -1,23 +1,22 @@
 import requests
 import urllib3
-from src.config import BASE_URL
+from src.config import get_base_url 
 
-# Desactivar advertencias SSL
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 def get_sensor_data(device_label, variable_label, token):
-    """
-    Descarga los últimos XX datos.
-    """
-    url = f"{BASE_URL}/{device_label}/{variable_label}/values"
+    # CAMBIO: Obtenemos la URL dinámicamente
+    base_url = get_base_url()
+    
+    # Construcción de la ruta
+    url = f"{base_url}/{device_label}/{variable_label}/values"
     
     params = {
         "token": token,
-        "page_size": 100000  # Ajustable según necesidad
+        "page_size": 1000 
     }
     
     try:
-        # verify=False para evitar bloqueo de certificado
         response = requests.get(url, params=params, verify=False)
         
         if response.status_code == 404:

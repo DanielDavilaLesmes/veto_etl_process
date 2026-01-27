@@ -1,135 +1,145 @@
 
 # VETO ETL Process: Ubidots a Excel
 
-Este proyecto implementa un proceso **ETL (Extracción, Transformación y Carga)** automatizado en Python para descargar datos históricos de sensores desde la plataforma **Ubidots**, normalizarlos temporalmente y generar reportes consolidados en formato Excel.
+Este repositorio contiene una solución **ETL (Extracción, Transformación y Carga)** automatizada diseñada para el proyecto de Excelencia Operacional. Su objetivo es descargar masivamente datos históricos desde la plataforma **Ubidots**, normalizarlos bajo reglas de negocio específicas y generar reportes en Excel agrupados por tipo de variable.
 
-El sistema está diseñado para manejar múltiples dispositivos (Pasillos, Sondas, etc.) y agrupar la información por **Tipo de Variable**, facilitando el análisis masivo de datos.
+El sistema es **totalmente configurable y portable**, permitiendo gestionar rutas y dispositivos sin modificar el código fuente.
 
-## 📋 Características Principales
+## 📋 Características Técnicas
 
-* **Extracción Modular:** Conexión robusta a la API v1.6 de Ubidots con manejo de paginación.
-* **Normalización Temporal:** Conversión automática de timestamps Unix a zona horaria local (Colombia) y creación de *buckets* de tiempo de 10 minutos.
-* **Enriquecimiento de Datos:** Generación de llaves compuestas (`Llave_Comun`) y desglose de fechas (Año, Mes, Día, Hora).
-* **Consolidación por Variable:** Genera un archivo `.xlsx` único por cada variable (ej. `tempc_sht.xlsx`) que contiene la data de todos los dispositivos configurados.
-* **Configuración Externa:** Gestión de dispositivos y credenciales mediante archivo JSON para seguridad y escalabilidad.
+* **Arquitectura Modular:** Separación clara de responsabilidades en capas (`extract`, `transform`, `load`, `config`).
+* **Portabilidad Total:** Uso de rutas absolutas y relativas gestionadas vía `config.json`. Funciona en cualquier entorno (Windows/Linux/Mac) sin cambios de código.
+* **Agrupación por Variable:** Genera un único archivo Excel por variable (ej. `tempc_sht.xlsx`) consolidando la data de todos los dispositivos (Pasillos, Sondas, etc.).
+* **Normalización Temporal:**
+* Conversión automática a Zona Horaria **America/Bogota**.
+* Creación de *Buckets* de tiempo de **10 minutos**.
+* Generación de `Llave_Comun` (Formato `AAAAMMDDHHMM`) para cruces de datos.
+
+
+* **Resiliencia:** Manejo de errores de red (SSL/Timeouts) y validación de integridad de datos.
 
 ## 📂 Estructura del Proyecto
 
 ```text
 VETO_ETL_PROCESS/
 │
-├── src/                        # Paquete de código fuente
-│   ├── __init__.py
-│   ├── config.py               # Lectura de configuración y validaciones
-│   ├── extract.py              # Lógica de conexión a la API (Request/Response)
-│   ├── transform.py            # Limpieza, zonas horarias y columnas calculadas
-│   └── load.py                 # Exportación a archivos Excel
+├── config.json                 # ⚙️ Configuración de infraestructura (Rutas y API)
+├── config_devices.json         # 📋 Inventario de dispositivos y sensores
+├── run_etl.py                  # ▶️ Orquestador principal (Entry Point)
+├── requirements.txt            # 📦 Dependencias de Python
+├── README.md                   # 📄 Documentación
 │
-├── config_devices.json         # Archivo de configuración (Dispositivos y Sensores)
-├── requirements.txt            # Dependencias del proyecto
-├── run_etl.py                  # Orquestador principal
-└── README.md                   # Documentación
+└── src/                        # Código Fuente
+    ├── __init__.py
+    ├── config.py               # Gestor de rutas y lectura de JSONs
+    ├── extract.py              # Cliente HTTP para API Ubidots
+    ├── transform.py            # Lógica de negocio y limpieza de datos
+    └── load.py                 # Generador de archivos Excel
 
 ```
 
-## ⚙️ Requisitos Previos
+## ⚙️ Configuración del Sistema
 
-* **Python 3.8** o superior.
-* Conexión a internet (Acceso a `industrial.api.ubidots.com`).
-* Credenciales de Ubidots (Tokens y API Labels).
+El sistema depende de dos archivos JSON que deben estar presentes en la raíz.
 
-### Instalación de Dependencias
+### 1. `config.json` (Infraestructura)
 
-Ejecute el siguiente comando para instalar las librerías necesarias:
-
-```bash
-pip install pandas requests openpyxl
-
-```
-
-*(O use el archivo requirements.txt si ya lo generó)*:
-
-```bash
-pip install -r requirements.txt
-
-```
-
-## 🔧 Configuración (`config_devices.json`)
-
-El sistema se alimenta de un archivo JSON en la raíz del proyecto. Debe seguir estrictamente esta estructura:
+Define *dónde* están los archivos y *a dónde* van los resultados. Esto permite migrar el proyecto a otro PC simplemente cambiando estas rutas.
 
 ```json
 {
-  "sensors": [
-    "tempc_sht",
-    "humidity",
-    "bat_status"
-  ],
+  "api": {
+    "base_url": "https://industrial.api.ubidots.com/api/v1.6/devices",
+    "timeout_seconds": 30
+  },
+  "rutas": {
+    "carpeta_salida": "./Reportes_Finales_2026",  <-- Aquí se guardarán los Excel
+    "archivo_dispositivos": "config_devices.json" <-- Nombre del archivo de inventario
+  }
+}
+
+```
+
+### 2. `config_devices.json` (Negocio)
+
+Define *qué* se va a descargar. Contiene la lista de variables maestras y las credenciales de cada dispositivo.
+
+```json
+{
+  "sensors": [ "tempc_sht", "bat_status", "humidity" ],
   "devices": [
     {
       "device_name": "P001",
-      "device_category": "Pasillos",
+      "device_category": "Pasillo",
       "device_api_label": "eui-a84041f5a186de1a",
-      "device_ID": "690df11ec531062ed377159d",
-      "device_token": "BBUS-XXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      "device_token": "BBUS-XXXXXXXXXXXXXXXXXXXXXXXX"
     },
-    {
-      "device_name": "Sonda 1",
-      "device_category": "Sondas",
-      "device_api_label": "eui-b123456789abcdef",
-      "device_token": "BBUS-YYYYYYYYYYYYYYYYYYYYYYYYYYYY"
-    }
+    ...
   ]
 }
 
 ```
 
-* **sensors:** Lista de las variables (API Labels) que se buscarán en *todos* los dispositivos.
-* **devices:** Lista de objetos con las credenciales específicas de cada dispositivo.
+## 🚀 Instalación y Ejecución
 
-## 🚀 Ejecución
+### Prerrequisitos
 
-Para iniciar el proceso de extracción y generación de reportes:
+* Python 3.8 o superior.
+* Acceso a internet (Salida HTTPS a `industrial.api.ubidots.com`).
 
+### Pasos
+
+1. **Instalar Dependencias:**
+```bash
+pip install pandas requests openpyxl
+
+```
+
+
+*(O usando el archivo requirements: `pip install -r requirements.txt`)*
+2. **Verificar Configuración:**
+Asegúrese de que `config.json` apunte a las carpetas correctas y que `config_devices.json` tenga los tokens actualizados.
+3. **Ejecutar el ETL:**
 ```bash
 python run_etl.py
 
 ```
 
-### Flujo de Ejecución:
 
-1. El script lee la lista de `sensors`.
-2. Toma la primera variable (ej. `tempc_sht`).
-3. Itera sobre los 43 dispositivos configurados, descargando los últimos 1.000 datos de esa variable específica.
-4. Aplica transformaciones (Zona Horaria, Redondeo a 10 min).
-5. Consolida toda la información en un DataFrame maestro.
-6. Genera el archivo `Resultados_Por_Variable/tempc_sht.xlsx`.
-7. Repite el proceso para la siguiente variable.
 
-## 📊 Salida (Output)
+## 📊 Salida de Datos (Output)
 
-Los archivos se generarán automáticamente en la carpeta `Resultados_Por_Variable/`.
+Al finalizar la ejecución, el sistema creará automáticamente la carpeta definida en `config.json` (ej: `Reportes_Finales_2026`).
 
-**Ejemplo de estructura de columnas en Excel:**
+Dentro encontrará un archivo `.xlsx` por cada sensor definido en la lista `sensors`.
+
+**Ejemplo: `tempc_sht.xlsx**`
+Este archivo contendrá todas las lecturas de temperatura de *todos* los pasillos y sondas, con la siguiente estructura tabular:
 
 | Llave_Comun | Pasillo | Pasillo_est | Anio | Mes | Dia | Hora_10min | FechaHora_Original | Variable | Valor |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 202601200000 | Pasillo 1 | P001 | 2026 | 1 | 20 | 00:00 | 2026-01-20 00:01:00 | tempc_sht | -19.2 |
-| 202601200010 | Pasillo 1 | P001 | 2026 | 1 | 20 | 00:10 | 2026-01-20 00:11:04 | tempc_sht | -19.1 |
+| **202601271450** | Pasillo 1 | P001 | 2026 | 01 | 27 | **14:50** | 27/01/2026 14:53:12 | tempc_sht | -18.5 |
+| **202601271450** | Sonda 4 | S004 | 2026 | 01 | 27 | **14:50** | 27/01/2026 14:51:00 | tempc_sht | -20.1 |
 
-* **Llave_Comun:** Formato `AAAAMMDDHHMM` (Agrupación de 10 min). Útil para cruces de datos.
-* **Hora_10min:** Hora redondeada al múltiplo de 10 minutos inferior.
+* **Llave_Comun:** Identificador único temporal para cruces (AñoMesDiaHoraMinuto).
+* **Hora_10min:** Hora redondeada al múltiplo inferior de 10 minutos (Regla de negocio).
 
-## ⚠️ Notas Técnicas
+## ⚠️ Solución de Problemas Comunes
 
-1. **Límite de Datos:** Actualmente configurado para descargar los últimos 1.000 registros por petición (`page_size=1000`).
-2. **Manejo de Errores:**
-* Si un dispositivo no tiene una variable específica (ej. "Batería" en un sensor virtual), el script lo omite silenciosamente y continúa con el siguiente.
-* Errores de conexión (Timeouts/SSL) son capturados y logueados en consola.
+1. **"Config Warning: config.json no encontrado"**
+* El script utiliza detección de rutas absolutas. Asegúrese de que `config.json` esté en la misma carpeta que `run_etl.py`, no dentro de `src/`.
+
+
+2. **Errores SSL / Timeouts**
+* El código tiene desactivada la verificación SSL (`verify=False`) para compatibilidad con redes corporativas estrictas. Si persiste, revise la conexión a internet.
+
+
+3. **Datos Vacíos**
+* Si un archivo Excel se genera vacío o no se genera, verifique que el `device_api_label` en el JSON coincida exactamente con el de la plataforma Ubidots.
 
 
 
 ---
 
-**Desarrollado para:** VETO - Proyecto de Excelencia Operacional.
-**Fecha de actualización:** Enero 2026.
+**Desarrollador:** Equipo de Desarrollo / Daniel Davila - OPEX IceStar
+**Última Actualización:** Enero 2026
