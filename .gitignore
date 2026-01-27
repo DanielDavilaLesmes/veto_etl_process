@@ -1,0 +1,25 @@
+Entorno Virtual Python
+
+venv/
+.DS_Store
+
+Archivos Generados por Python y Build
+
+pycache/
+*.pyc
+*.egg-info/
+dist/
+
+Directorios de datos (LOCALES)
+
+Resultados_Por_Variable/
+
+
+config_devices.json
+
+
+Archivos de logs y temporales
+
+*.log
+
+Archivos de configuración local
