@@ -1,67 +1,53 @@
 import pandas as pd
-import os
-
-# IMPORTS ACTUALIZADOS: Usamos los nuevos getters
-from src.config import get_devices_config_data, get_output_path 
+from src.config import get_devices_config_data
 from src.extract import get_sensor_data
 from src.transform import transform_data
-from src.load import save_sensor_file
+from src.load import save_to_sql
 
 def main():
-    print("--- INICIANDO ETL (Versión Configuración Externa) ---")
+    print("--- INICIANDO VETO ETL (Ubidots -> SQL Server) ---")
     
-    # 1. Cargar configuración de dispositivos
+    # 1. Cargar Configuración
     config = get_devices_config_data()
-    
-    if not config:
-        print("Deteniendo ejecución: No se pudo cargar la configuración de dispositivos.")
-        return
+    if not config: return
 
-    # Extraer listas del JSON
     sensores = config.get('sensors', [])
     dispositivos = config.get('devices', [])
-    ruta_salida = get_output_path()
     
-    print(f"Ruta de Salida: {ruta_salida}")
-    print(f"Variables a procesar: {len(sensores)}")
-    print(f"Dispositivos configurados: {len(dispositivos)}")
+    print(f"Variables: {len(sensores)} | Dispositivos: {len(dispositivos)}")
 
-    # 2. Iterar por cada Variable (Sensor)
+    # 2. Bucle por Variable (Estrategia Ubidots)
     for sensor in sensores:
-        print(f"\n>>> Procesando Variable: {sensor}")
+        print(f"\n>>> Procesando Variable Global: {sensor}")
         datos_consolidados_variable = []
 
-        # 3. Buscar esta variable en TODOS los dispositivos
+        # 3. Extraer de todos los dispositivos
         for device in dispositivos:
-            d_name = device.get('device_name', 'S_N')
             d_label = device.get('device_api_label')
             d_token = device.get('device_token')
             
-            # Validación de seguridad
-            if not d_label or not d_token: 
-                continue
+            if not d_label or not d_token: continue
 
-            # A. Extracción
+            # Extracción (Últimos 1000 datos o lógica paginada que tengas)
             raw_data = get_sensor_data(d_label, sensor, d_token)
             
             if raw_data:
-                # Preparamos metadatos para la transformación
                 metadata = device.copy()
                 metadata['variable_label'] = sensor
                 
-                # B. Transformación
+                # Transformación (Llave_Comun, Hora_10min, etc.)
                 df_clean = transform_data(raw_data, metadata)
                 
                 if not df_clean.empty:
                     datos_consolidados_variable.append(df_clean)
         
-        # 4. Guardado (Carga)
+        # 4. Inserción Masiva en SQL
         if datos_consolidados_variable:
             df_final = pd.concat(datos_consolidados_variable, ignore_index=True)
-            save_sensor_file(df_final, sensor_name=sensor)
-            print(f"   [OK] Archivo generado con {len(df_final)} registros.")
+            # Insertamos todo el bloque de esta variable en su tabla correspondiente
+            save_to_sql(df_final, variable_name=sensor)
         else:
-            print(f"   [Info] No se encontraron datos para {sensor}.")
+            print(f"   [Info] Sin datos recientes para {sensor}.")
 
     print("\n--- PROCESO FINALIZADO ---")
 

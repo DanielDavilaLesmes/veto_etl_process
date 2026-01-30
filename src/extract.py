@@ -13,7 +13,7 @@ def get_sensor_data(device_label, variable_label, token):
     
     params = {
         "token": token,
-        "page_size": 1000 
+        "page_size": 1 
     }
     
     try:
