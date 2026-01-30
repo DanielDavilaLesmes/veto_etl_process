@@ -13,7 +13,7 @@ def get_sensor_data(device_label, variable_label, token):
     
     params = {
         "token": token,
-        "page_size": 1 
+        "page_size": 144 # Últimas 24 horas en intervalos de 10 minutos
     }
     
     try:

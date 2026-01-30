@@ -1,50 +1,59 @@
 
-# VETO ETL Process: Ubidots a Excel
+# VETO ETL Process: Ubidots a SQL Server
 
-Este repositorio contiene una solución **ETL (Extracción, Transformación y Carga)** automatizada diseñada para el proyecto de Excelencia Operacional. Su objetivo es descargar masivamente datos históricos desde la plataforma **Ubidots**, normalizarlos bajo reglas de negocio específicas y generar reportes en Excel agrupados por tipo de variable.
+Este repositorio contiene la solución de ingeniería de datos para el proyecto de Excelencia Operacional. Automatiza la extracción masiva de datos desde la nube de **Ubidots**, aplica normalización temporal y reglas de negocio, y carga los resultados directamente en una base de datos **SQL Server** corporativa.
 
-El sistema es **totalmente configurable y portable**, permitiendo gestionar rutas y dispositivos sin modificar el código fuente.
+El sistema está diseñado para ser **modular, portable y altamente configurable**.
 
 ## 📋 Características Técnicas
 
-* **Arquitectura Modular:** Separación clara de responsabilidades en capas (`extract`, `transform`, `load`, `config`).
-* **Portabilidad Total:** Uso de rutas absolutas y relativas gestionadas vía `config.json`. Funciona en cualquier entorno (Windows/Linux/Mac) sin cambios de código.
-* **Agrupación por Variable:** Genera un único archivo Excel por variable (ej. `tempc_sht.xlsx`) consolidando la data de todos los dispositivos (Pasillos, Sondas, etc.).
+* **Integración Directa a SQL:** Reemplaza los archivos planos por inserción directa en base de datos usando `SQLAlchemy` (ORM) y `Fast Executemany` para alto rendimiento.
 * **Normalización Temporal:**
-* Conversión automática a Zona Horaria **America/Bogota**.
-* Creación de *Buckets* de tiempo de **10 minutos**.
-* Generación de `Llave_Comun` (Formato `AAAAMMDDHHMM`) para cruces de datos.
+* Conversión de *Unix Timestamps* a Zona Horaria **America/Bogota**.
+* Generación de *Buckets* de tiempo de **10 minutos** para estandarizar cruces de información.
+* Creación de llave primaria compuesta (`Llave_Comun`: `AAAAMMDDHHMM`).
 
 
-* **Resiliencia:** Manejo de errores de red (SSL/Timeouts) y validación de integridad de datos.
+* **Arquitectura Configurable:** Gestión de credenciales, rutas y parámetros de negocio separados del código fuente (`config.json` y `config_devices.json`).
+* **Gestión Dinámica de Tablas:** Crea o actualiza tablas automáticamente basándose en el nombre de la variable (ej. `tempc_sht` -> `ind_Veto_tempc_sht`).
 
 ## 📂 Estructura del Proyecto
 
 ```text
 VETO_ETL_PROCESS/
 │
-├── config.json                 # ⚙️ Configuración de infraestructura (Rutas y API)
-├── config_devices.json         # 📋 Inventario de dispositivos y sensores
-├── run_etl.py                  # ▶️ Orquestador principal (Entry Point)
-├── requirements.txt            # 📦 Dependencias de Python
+├── config.json                 # ⚙️ Infraestructura: Credenciales DB y API
+├── config_devices.json         # 📋 Negocio: Inventario de dispositivos y variables
+├── run_etl.py                  # ▶️ Orquestador principal
+├── requirements.txt            # 📦 Librerías necesarias
 ├── README.md                   # 📄 Documentación
 │
 └── src/                        # Código Fuente
     ├── __init__.py
-    ├── config.py               # Gestor de rutas y lectura de JSONs
-    ├── extract.py              # Cliente HTTP para API Ubidots
-    ├── transform.py            # Lógica de negocio y limpieza de datos
-    └── load.py                 # Generador de archivos Excel
+    ├── config.py               # Lector de configuraciones
+    ├── extract.py              # Cliente API Ubidots
+    ├── transform.py            # Lógica de limpieza y fechas
+    └── load.py                 # Conector SQL Server (Insert)
 
 ```
 
-## ⚙️ Configuración del Sistema
+## ⚙️ Requisitos Previos
 
-El sistema depende de dos archivos JSON que deben estar presentes en la raíz.
+1. **Python 3.8+** instalado.
+2. **ODBC Driver 17 for SQL Server**: Necesario para que Python (`pyodbc`) se comunique con SQL Server. [Descargar aquí](https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server).
+3. Acceso de red a:
+* `industrial.api.ubidots.com` (HTTPS/443).
+* Servidor SQL Corporativo (Puerto estándar 1433).
+
+
+
+## 🔧 Configuración
+
+El sistema depende de dos archivos JSON en la raíz:
 
 ### 1. `config.json` (Infraestructura)
 
-Define *dónde* están los archivos y *a dónde* van los resultados. Esto permite migrar el proyecto a otro PC simplemente cambiando estas rutas.
+Define las credenciales de la base de datos y la API. **No compartir este archivo públicamente.**
 
 ```json
 {
@@ -52,9 +61,16 @@ Define *dónde* están los archivos y *a dónde* van los resultados. Esto permit
     "base_url": "https://industrial.api.ubidots.com/api/v1.6/devices",
     "timeout_seconds": 30
   },
+  "database": {
+    "server": "192.168.X.X",
+    "database": "Indicadores",
+    "username": "sa",
+    "password": "StrongPassword!",
+    "driver": "ODBC Driver 17 for SQL Server",
+    "table_prefix": "ind_Veto_"   <-- Prefijo para las tablas creadas
+  },
   "rutas": {
-    "carpeta_salida": "./Reportes_Finales_2026",  <-- Aquí se guardarán los Excel
-    "archivo_dispositivos": "config_devices.json" <-- Nombre del archivo de inventario
+    "archivo_dispositivos": "config_devices.json"
   }
 }
 
@@ -62,19 +78,18 @@ Define *dónde* están los archivos y *a dónde* van los resultados. Esto permit
 
 ### 2. `config_devices.json` (Negocio)
 
-Define *qué* se va a descargar. Contiene la lista de variables maestras y las credenciales de cada dispositivo.
+Define qué variables buscar y en qué dispositivos.
 
 ```json
 {
-  "sensors": [ "tempc_sht", "bat_status", "humidity" ],
+  "sensors": [ "tempc_sht", "bat_status" ],
   "devices": [
     {
       "device_name": "P001",
-      "device_category": "Pasillo",
-      "device_api_label": "eui-a84041f5a186de1a",
-      "device_token": "BBUS-XXXXXXXXXXXXXXXXXXXXXXXX"
-    },
-    ...
+      "device_category": "Pasillos",
+      "device_api_label": "eui-xxxxxxxxxxxx",
+      "device_token": "BBUS-xxxxxxxxxxxx"
+    }
   ]
 }
 
@@ -82,24 +97,22 @@ Define *qué* se va a descargar. Contiene la lista de variables maestras y las c
 
 ## 🚀 Instalación y Ejecución
 
-### Prerrequisitos
-
-* Python 3.8 o superior.
-* Acceso a internet (Salida HTTPS a `industrial.api.ubidots.com`).
-
-### Pasos
-
-1. **Instalar Dependencias:**
+1. **Crear entorno virtual (Recomendado):**
 ```bash
-pip install pandas requests openpyxl
+python -m venv venv
+.\venv\Scripts\activate  # En Windows
 
 ```
 
 
-*(O usando el archivo requirements: `pip install -r requirements.txt`)*
-2. **Verificar Configuración:**
-Asegúrese de que `config.json` apunte a las carpetas correctas y que `config_devices.json` tenga los tokens actualizados.
-3. **Ejecutar el ETL:**
+2. **Instalar dependencias:**
+```bash
+pip install -r requirements.txt
+
+```
+
+
+3. **Ejecutar el proceso:**
 ```bash
 python run_etl.py
 
@@ -107,39 +120,44 @@ python run_etl.py
 
 
 
-## 📊 Salida de Datos (Output)
+## 📊 Modelo de Datos (Output en SQL)
 
-Al finalizar la ejecución, el sistema creará automáticamente la carpeta definida en `config.json` (ej: `Reportes_Finales_2026`).
+El sistema insertará los datos en la base de datos definida. El nombre de la tabla se genera dinámicamente:
+`[table_prefix] + [nombre_variable]`
 
-Dentro encontrará un archivo `.xlsx` por cada sensor definido en la lista `sensors`.
+**Ejemplo:** Para la variable `tempc_sht`, la tabla será `dbo.ind_Veto_tempc_sht`.
 
-**Ejemplo: `tempc_sht.xlsx**`
-Este archivo contendrá todas las lecturas de temperatura de *todos* los pasillos y sondas, con la siguiente estructura tabular:
+**Estructura de la tabla:**
 
-| Llave_Comun | Pasillo | Pasillo_est | Anio | Mes | Dia | Hora_10min | FechaHora_Original | Variable | Valor |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **202601271450** | Pasillo 1 | P001 | 2026 | 01 | 27 | **14:50** | 27/01/2026 14:53:12 | tempc_sht | -18.5 |
-| **202601271450** | Sonda 4 | S004 | 2026 | 01 | 27 | **14:50** | 27/01/2026 14:51:00 | tempc_sht | -20.1 |
+| Columna | Tipo | Descripción |
+| --- | --- | --- |
+| **Llave_Comun** | `nvarchar` | ID Temporal (AAAAMMDDHHMM). |
+| **Pasillo** | `nvarchar` | Nombre descriptivo del dispositivo (ej. Pasillo 1). |
+| **Pasillo_est** | `nvarchar` | Nombre técnico o corto (ej. P001). |
+| **Anio** | `int` | Año de la medición. |
+| **Mes** | `int` | Mes de la medición. |
+| **Dia** | `int` | Día de la medición. |
+| **Hora_10min** | `nvarchar` | Hora redondeada (ej. 14:10). |
+| **FechaHora_Original** | `datetime` | Timestamp exacto (Zona Horaria Colombia). |
+| **Variable** | `nvarchar` | Nombre de la variable (tempc_sht). |
+| **Valor** | `float` | Valor numérico medido. |
 
-* **Llave_Comun:** Identificador único temporal para cruces (AñoMesDiaHoraMinuto).
-* **Hora_10min:** Hora redondeada al múltiplo inferior de 10 minutos (Regla de negocio).
+## ⚠️ Solución de Problemas
 
-## ⚠️ Solución de Problemas Comunes
-
-1. **"Config Warning: config.json no encontrado"**
-* El script utiliza detección de rutas absolutas. Asegúrese de que `config.json` esté en la misma carpeta que `run_etl.py`, no dentro de `src/`.
+* **Error: `DataSource name not found and no default driver specified**`:
+* Falta instalar el *ODBC Driver 17*. Ver sección Requisitos.
 
 
-2. **Errores SSL / Timeouts**
-* El código tiene desactivada la verificación SSL (`verify=False`) para compatibilidad con redes corporativas estrictas. Si persiste, revise la conexión a internet.
+* **Error de Conexión SQL (Named Pipes / TCP)**:
+* Verifique que el servidor SQL acepte conexiones remotas y que el firewall permita el puerto 1433.
 
 
-3. **Datos Vacíos**
-* Si un archivo Excel se genera vacío o no se genera, verifique que el `device_api_label` en el JSON coincida exactamente con el de la plataforma Ubidots.
+* **Tablas Duplicadas / Datos Dobles**:
+* El script usa `append` (agregar). Si se ejecuta varias veces para el mismo rango de tiempo, los datos se duplicarán. Se recomienda limpiar la tabla o ejecutar solo para datos nuevos.
 
 
 
 ---
 
-**Desarrollador:** Equipo de Desarrollo / Daniel Davila - OPEX IceStar
-**Última Actualización:** Enero 2026
+**Desarrollado para:** VETO - Excelencia Operacional.
+**Última Actualización:** Enero 2026.
